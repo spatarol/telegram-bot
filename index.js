@@ -1,26 +1,40 @@
 require('dotenv').config();
+const express = require('express');
 const TelegramBot = require('node-telegram-bot-api');
 
-// Ottieni il token dalle variabili d'ambiente
+// Variabili d'ambiente
 const token = process.env.BOT_TOKEN;
-if (!token) {
-  console.error('BOT_TOKEN non trovato nelle variabili d\'ambiente');
+const port = process.env.PORT || 3000;
+const url = process.env.WEBHOOK_URL; // Es: https://tuo-dominio.com
+
+if (!token || !url) {
+  console.error('BOT_TOKEN o WEBHOOK_URL non presenti nelle variabili d\'ambiente');
   process.exit(1);
 }
 
-// Crea una nuova istanza del bot
-const bot = new TelegramBot(token, { polling: true });
+// Inizializza bot in modalità webhook
+const bot = new TelegramBot(token, { webHook: { port: port } });
 
-// Gestisci il comando /start
-bot.onText(/\/start/, (msg) => {
-  const chatId = msg.chat.id;
-  bot.sendMessage(chatId, 'Ciao! Sono il tuo bot Telegram. Usa /help per vedere i comandi disponibili.');
+// Imposta il webhook su Telegram
+bot.setWebHook(`${url}/bot${token}`);
+
+// Crea server Express
+const app = express();
+
+// Endpoint per ricevere gli aggiornamenti da Telegram
+app.use(express.json());
+app.post(`/bot${token}`, (req, res) => {
+  bot.processUpdate(req.body);
+  res.sendStatus(200);
 });
 
-// Gestisci il comando /help
-bot.onText(/\/help/, (msg) => {
-  const chatId = msg.chat.id;
-  bot.sendMessage(chatId, `
+// Comandi del bot
+bot.onText(/\/start/i, (msg) => {
+  bot.sendMessage(msg.chat.id, 'Ciao! Sono il tuo bot Telegram. Usa /help per vedere i comandi disponibili.');
+});
+
+bot.onText(/\/help/i, (msg) => {
+  bot.sendMessage(msg.chat.id, `
 Comandi disponibili:
 /start - Avvia il bot
 /help - Mostra questo messaggio di aiuto
@@ -28,28 +42,25 @@ Comandi disponibili:
 `);
 });
 
-// Gestisci il comando /info
-bot.onText(/\/info/, (msg) => {
-  const chatId = msg.chat.id;
-  bot.sendMessage(chatId, `
+bot.onText(/\/info/i, (msg) => {
+  bot.sendMessage(msg.chat.id, `
 Bot creato durante il corso di Containerizzazione e Deployment.
 Versione: 1.0.0
 Ambiente: ${process.env.NODE_ENV || 'development'}
 `);
 });
 
-// Gestisci messaggi non riconosciuti
 bot.on('message', (msg) => {
   const chatId = msg.chat.id;
-  
-  // Ignora i comandi che abbiamo già gestito
-  if (msg.text && (msg.text.startsWith('/start') || 
-                   msg.text.startsWith('/help') || 
-                   msg.text.startsWith('/info'))) {
-    return;
-  }
-  
+  const text = msg.text;
+
+  if (!text || text.match(/^\/(start|help|info)/i)) return;
+
   bot.sendMessage(chatId, 'Non ho capito. Usa /help per vedere i comandi disponibili.');
 });
 
-console.log('Bot avviato con successo!');
+// Avvia il server
+app.listen(port, () => {
+  console.log(`Server avviato sulla porta ${port}`);
+  console.log(`Webhook impostato su ${url}/bot${token}`);
+});
